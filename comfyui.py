@@ -106,15 +106,34 @@ class ComfyUI:
                 self.server_process.terminate()
             raise
 
-    def cleanup(self):
-        """Clean up server process"""
+    def stop_server(self):
+        """Stop the ComfyUI server process"""
         if self.server_process:
             self.server_process.terminate()
             self.server_process.wait()
             self.server_process = None
 
+    def cleanup_directories(self, directories):
+        """Clean up the specified directories"""
+        self.clear_queue()
+        for directory in directories:
+            if directory == self.input_directory:
+                subject_path = os.path.join(directory, "subject.png")
+                if os.path.exists(subject_path):
+                    os.remove(subject_path)
+            else:
+                if os.path.exists(directory):
+                    shutil.rmtree(directory)
+                    os.makedirs(directory)
+
+    def cleanup(self):
+        """Clean up all resources"""
+        self.stop_server()
+        if hasattr(self, 'output_directory') and hasattr(self, 'input_directory'):
+            self.cleanup_directories([self.output_directory, self.input_directory])
+
     def __del__(self):
-        """Ensure server is cleaned up when object is destroyed"""
+        """Ensure cleanup when object is destroyed"""
         self.cleanup()
 
     def is_server_running(self):
@@ -338,15 +357,3 @@ class ComfyUI:
                     files.extend(self.get_files(path, prefix=f"{prefix}{f}/"))
 
         return sorted(files)
-
-    def cleanup(self, directories):
-        self.clear_queue()
-        for directory in directories:
-            if directory == "/tmp/inputs":
-                subject_path = os.path.join(directory, "subject.png")
-                if os.path.exists(subject_path):
-                    os.remove(subject_path)
-            else:
-                if os.path.exists(directory):
-                    shutil.rmtree(directory)
-                    os.makedirs(directory)
