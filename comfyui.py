@@ -11,7 +11,8 @@ import random
 import requests
 import shutil
 import custom_node_helpers as helpers
-from cog import Path
+
+from pathlib import Path
 from node import Node
 from weights_downloader import WeightsDownloader
 from urllib.error import URLError

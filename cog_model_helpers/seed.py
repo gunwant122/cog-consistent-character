@@ -1,12 +1,9 @@
-from cog import Input
+
 import random
 
 
 def predict_seed() -> int:
-    return Input(
-        description="Set a seed for reproducibility. Random by default.",
-        default=None,
-    )
+    return None
 
 
 def generate(seed: int) -> int:
