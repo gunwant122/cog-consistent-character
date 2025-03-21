@@ -37,33 +37,57 @@ class ImageGenerator:
         
     def setup(self):
         """Initialize the ComfyUI and safety checker"""
-        self.comfyUI = ComfyUI("127.0.0.1:8188")
-        self.comfyUI.start_server(OUTPUT_DIR, INPUT_DIR)
-        self.safetyChecker = SafetyChecker()
+        try:
+            print("Setting up ComfyUI and safety checker...")
+            self.comfyUI = ComfyUI("127.0.0.1:8188")
+            self.comfyUI.start_server(OUTPUT_DIR, INPUT_DIR)
+            self.safetyChecker = SafetyChecker()
 
-        # Create necessary directories
-        os.makedirs(OUTPUT_DIR, exist_ok=True)
-        os.makedirs(INPUT_DIR, exist_ok=True)
-        os.makedirs(COMFYUI_TEMP_OUTPUT_DIR, exist_ok=True)
+            # Create necessary directories
+            os.makedirs(OUTPUT_DIR, exist_ok=True)
+            os.makedirs(INPUT_DIR, exist_ok=True)
+            os.makedirs(COMFYUI_TEMP_OUTPUT_DIR, exist_ok=True)
 
-        # Load workflow and handle weights
-        with open(api_json_file, "r") as file:
-            workflow = json.loads(file.read())
-        self.comfyUI.handle_weights(
-            workflow,
-            weights_to_download=[],
-        )
+            # Load workflow and handle weights
+            try:
+                with open(api_json_file, "r") as file:
+                    workflow = json.loads(file.read())
+            except FileNotFoundError:
+                raise RuntimeError(f"Workflow file '{api_json_file}' not found. Please ensure it exists in the same directory as predict.py")
+            except json.JSONDecodeError:
+                raise RuntimeError(f"Invalid JSON in workflow file '{api_json_file}'")
 
-        # Download pose images
-        self.comfyUI.weights_downloader.download(
-            "pose_images.tar",
-            "https://weights.replicate.delivery/default/fofr/character/pose_images.tar",
-            f"{INPUT_DIR}/poses",
-        )
+            self.comfyUI.handle_weights(
+                workflow,
+                weights_to_download=[],
+            )
 
-        self.headshots = self.list_pose_filenames(type="headshot")
-        self.poses = self.list_pose_filenames(type="pose")
-        self.all = self.headshots + self.poses
+            # Download pose images
+            print("Downloading pose images...")
+            self.comfyUI.weights_downloader.download(
+                "pose_images.tar",
+                "https://weights.replicate.delivery/default/fofr/character/pose_images.tar",
+                f"{INPUT_DIR}/poses",
+            )
+
+            self.headshots = self.list_pose_filenames(type="headshot")
+            self.poses = self.list_pose_filenames(type="pose")
+            self.all = self.headshots + self.poses
+            print("Setup completed successfully")
+
+        except Exception as e:
+            if self.comfyUI:
+                self.comfyUI.cleanup()
+            raise RuntimeError(f"Failed to setup: {str(e)}")
+
+    def cleanup(self):
+        """Clean up resources"""
+        if self.comfyUI:
+            self.comfyUI.cleanup()
+
+    def __del__(self):
+        """Ensure cleanup when object is destroyed"""
+        self.cleanup()
 
     def get_filenames(
         self, filenames: List[str], length: int, use_random: bool = True
@@ -249,15 +273,22 @@ class ImageGenerator:
 
 def main():
     # Example usage
-    generator = ImageGenerator()
-    
-    # Generate images with default parameters
-    for image_path in generator.generate(
-        prompt="A professional headshot of a person in business attire",
-        subject="path/to/your/input/image.jpg",  # Replace with actual path
-        number_of_outputs=2
-    ):
-        print(f"Generated image: {image_path}")
+    generator = None
+    try:
+        generator = ImageGenerator()
+        
+        # Generate images with default parameters
+        for image_path in generator.generate(
+            prompt="A professional headshot of a person in business attire",
+            subject="path/to/your/input/image.jpg",  # Replace with actual path
+            number_of_outputs=2
+        ):
+            print(f"Generated image: {image_path}")
+    except Exception as e:
+        print(f"Error: {str(e)}")
+    finally:
+        if generator:
+            generator.cleanup()
 
 if __name__ == "__main__":
     main()

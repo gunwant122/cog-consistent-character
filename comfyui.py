@@ -21,29 +21,101 @@ class ComfyUI:
     def __init__(self, server_address):
         self.weights_downloader = WeightsDownloader()
         self.server_address = server_address
+        self.server_process = None
+        self.comfyui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ComfyUI")
+
+    def install_comfyui(self):
+        """Install ComfyUI if not already installed"""
+        if not os.path.exists(self.comfyui_path):
+            print("ComfyUI not found. Installing...")
+            try:
+                # Clone ComfyUI repository
+                subprocess.run(
+                    ["git", "clone", "https://github.com/comfyanonymous/ComfyUI.git", self.comfyui_path],
+                    check=True
+                )
+                print("ComfyUI installed successfully")
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"Failed to install ComfyUI: {e}")
 
     def start_server(self, output_directory, input_directory):
+        """Start the ComfyUI server"""
         self.input_directory = input_directory
         self.output_directory = output_directory
+        
+        # Ensure ComfyUI is installed
+        self.install_comfyui()
+        
+        # Create necessary directories
+        os.makedirs(output_directory, exist_ok=True)
+        os.makedirs(input_directory, exist_ok=True)
+        
         self.apply_helper_methods("prepare", weights_downloader=self.weights_downloader)
 
         start_time = time.time()
+        
+        # Start server in a thread
         server_thread = threading.Thread(
-            target=self.run_server, args=(output_directory, input_directory)
+            target=self.run_server,
+            args=(output_directory, input_directory)
         )
+        server_thread.daemon = True  # Make thread daemon so it exits when main program exits
         server_thread.start()
+
+        # Wait for server to start
         while not self.is_server_running():
             if time.time() - start_time > 60:
-                raise TimeoutError("Server did not start within 60 seconds")
+                if self.server_process:
+                    self.server_process.terminate()
+                raise TimeoutError("Server did not start within 60 seconds. Check if port 8188 is available and ComfyUI dependencies are installed.")
             time.sleep(0.5)
 
         elapsed_time = time.time() - start_time
         print(f"Server started in {elapsed_time:.2f} seconds")
 
     def run_server(self, output_directory, input_directory):
-        command = f"python ./ComfyUI/main.py --output-directory {output_directory} --input-directory {input_directory} --disable-metadata --highvram"
-        server_process = subprocess.Popen(command, shell=True)
-        server_process.wait()
+        """Run the ComfyUI server process"""
+        try:
+            command = [
+                "python",
+                os.path.join(self.comfyui_path, "main.py"),
+                "--output-directory", output_directory,
+                "--input-directory", input_directory,
+                "--disable-metadata",
+                "--highvram"
+            ]
+            
+            self.server_process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            
+            # Monitor the process output
+            while True:
+                output = self.server_process.stdout.readline()
+                if output:
+                    print("ComfyUI:", output.strip())
+                if self.server_process.poll() is not None:
+                    break
+                    
+        except Exception as e:
+            print(f"Error running ComfyUI server: {e}")
+            if self.server_process:
+                self.server_process.terminate()
+            raise
+
+    def cleanup(self):
+        """Clean up server process"""
+        if self.server_process:
+            self.server_process.terminate()
+            self.server_process.wait()
+            self.server_process = None
+
+    def __del__(self):
+        """Ensure server is cleaned up when object is destroyed"""
+        self.cleanup()
 
     def is_server_running(self):
         try:
