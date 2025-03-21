@@ -194,7 +194,7 @@ class ImageGenerator:
         if not self.comfyUI:
             self.setup()
             
-        self.comfyUI.cleanup(ALL_DIRECTORIES)
+        self.comfyUI.cleanup_directories(ALL_DIRECTORIES)
 
         # Set default values for output format and quality
         if output_format is None:
@@ -224,52 +224,56 @@ class ImageGenerator:
         has_any_nsfw_content = False
         has_yielded_safe_content = False
 
-        for pose in poses:
-            self.update_workflow(
-                workflow,
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                seed=seed,
-                type=type,
-                number_of_outputs=number_of_outputs,
-                number_of_images_per_pose=number_of_images_per_pose,
-                randomise_poses=randomise_poses,
-                pose=pose,
-            )
-            self.comfyUI.run_workflow(workflow)
-            all_output_files = self.comfyUI.get_files(OUTPUT_DIR)
-            new_files = [
-                file
-                for file in all_output_files
-                if file.name.rsplit(".", 1)[0] not in returned_files
-            ]
-            optimised_images = optimise_images.optimise_image_files(
-                output_format, output_quality, new_files
-            )
+        try:
+            for pose in poses:
+                self.update_workflow(
+                    workflow,
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    seed=seed,
+                    type=type,
+                    number_of_outputs=number_of_outputs,
+                    number_of_images_per_pose=number_of_images_per_pose,
+                    randomise_poses=randomise_poses,
+                    pose=pose,
+                )
+                self.comfyUI.run_workflow(workflow)
+                all_output_files = self.comfyUI.get_files(OUTPUT_DIR)
+                new_files = [
+                    file
+                    for file in all_output_files
+                    if file.name.rsplit(".", 1)[0] not in returned_files
+                ]
+                optimised_images = optimise_images.optimise_image_files(
+                    output_format, output_quality, new_files
+                )
 
-            for image in optimised_images:
-                if not disable_safety_checker:
-                    has_nsfw_content = self.safetyChecker.run(
-                        [image], error_on_all_nsfw=False
-                    )
-                    if any(has_nsfw_content):
-                        has_any_nsfw_content = True
-                        print(f"Not returning image {image} as it has NSFW content.")
+                for image in optimised_images:
+                    if not disable_safety_checker:
+                        has_nsfw_content = self.safetyChecker.run(
+                            [image], error_on_all_nsfw=False
+                        )
+                        if any(has_nsfw_content):
+                            has_any_nsfw_content = True
+                            print(f"Not returning image {image} as it has NSFW content.")
+                        else:
+                            yield Path(image)
+                            has_yielded_safe_content = True
                     else:
                         yield Path(image)
                         has_yielded_safe_content = True
-                else:
-                    yield Path(image)
-                    has_yielded_safe_content = True
 
-            returned_files.extend(
-                [file.name.rsplit(".", 1)[0] for file in all_output_files]
-            )
+                returned_files.extend(
+                    [file.name.rsplit(".", 1)[0] for file in all_output_files]
+                )
 
-        if has_any_nsfw_content and not has_yielded_safe_content:
-            raise Exception(
-                "NSFW content detected in all outputs. Try running it again, or try a different prompt."
-            )
+            if has_any_nsfw_content and not has_yielded_safe_content:
+                raise Exception(
+                    "NSFW content detected in all outputs. Try running it again, or try a different prompt."
+                )
+        except Exception as e:
+            self.comfyUI.cleanup()
+            raise e
 
 def main():
     # Example usage
