@@ -161,8 +161,8 @@ class ImageGenerator:
         number_of_outputs: int = 3,
         number_of_images_per_pose: int = 1,
         randomise_poses: bool = True,
-        output_format: str = "png",
-        output_quality: int = 95,
+        output_format: str = None,
+        output_quality: int = None,
         seed: Optional[int] = None,
         disable_safety_checker: bool = False,
     ) -> Iterator[Path]:
@@ -171,6 +171,12 @@ class ImageGenerator:
             self.setup()
             
         self.comfyUI.cleanup(ALL_DIRECTORIES)
+
+        # Set default values for output format and quality
+        if output_format is None:
+            output_format = optimise_images.get_default_format()
+        if output_quality is None:
+            output_quality = optimise_images.get_default_quality()
 
         # Hardcoding to Half-body poses as they're more consistent
         type = "Half-body poses"
