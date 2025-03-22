@@ -39,7 +39,7 @@ class ImageGenerator:
         """Initialize the ComfyUI and safety checker"""
         try:
             print("Setting up ComfyUI and safety checker...")
-            self.comfyUI = ComfyUI("127.0.0.1:8188")
+            self.comfyUI = ComfyUI("http://0.0.0.0:8188")
             self.comfyUI.start_server(OUTPUT_DIR, INPUT_DIR)
             self.safetyChecker = SafetyChecker()
 

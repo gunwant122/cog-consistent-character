@@ -77,15 +77,26 @@ class ComfyUI:
     def run_server(self, output_directory, input_directory):
         """Run the ComfyUI server process"""
         try:
+            # First check if ComfyUI directory exists
+            if not os.path.exists(self.comfyui_path):
+                raise RuntimeError(f"ComfyUI directory not found at {self.comfyui_path}")
+            
+            # Check if main.py exists
+            main_py_path = os.path.join(self.comfyui_path, "main.py")
+            if not os.path.exists(main_py_path):
+                raise RuntimeError(f"ComfyUI main.py not found at {main_py_path}")
+
             command = [
                 "python",
-                os.path.join(self.comfyui_path, "main.py"),
+                main_py_path,
                 "--output-directory", output_directory,
                 "--input-directory", input_directory,
                 "--disable-metadata",
                 "--highvram",
                 "--listen", "0.0.0.0"  # Listen on all interfaces
             ]
+            
+            print("Starting ComfyUI server with command:", " ".join(command))
             
             self.server_process = subprocess.Popen(
                 command,
@@ -95,28 +106,40 @@ class ComfyUI:
                 cwd=self.comfyui_path  # Set working directory to ComfyUI path
             )
             
+            if self.server_process is None:
+                raise RuntimeError("Failed to start ComfyUI server process")
+            
             # Monitor both stdout and stderr
-            while True:
-                stdout_line = self.server_process.stdout.readline()
-                stderr_line = self.server_process.stderr.readline()
-                
-                if stdout_line:
-                    print("ComfyUI:", stdout_line.strip())
-                if stderr_line:
-                    print("ComfyUI Error:", stderr_line.strip())
+            while self.server_process and self.server_process.poll() is None:
+                # Use communicate with timeout to avoid deadlocks
+                try:
+                    stdout_data, stderr_data = self.server_process.communicate(timeout=0.1)
+                    if stdout_data:
+                        print("ComfyUI:", stdout_data.strip())
+                    if stderr_data:
+                        print("ComfyUI Error:", stderr_data.strip())
+                except subprocess.TimeoutExpired:
+                    # Process is still running, continue reading output
+                    continue
                     
-                if self.server_process.poll() is not None:
-                    remaining_stderr = self.server_process.stderr.read()
-                    if remaining_stderr:
-                        print("ComfyUI Error:", remaining_stderr.strip())
-                    if self.server_process.returncode != 0:
-                        raise RuntimeError(f"ComfyUI server failed to start with return code {self.server_process.returncode}")
-                    break
+            # Check final status
+            if self.server_process:
+                return_code = self.server_process.poll()
+                if return_code is not None and return_code != 0:
+                    # Get any remaining output
+                    stdout_data, stderr_data = self.server_process.communicate()
+                    if stderr_data:
+                        print("ComfyUI Error:", stderr_data.strip())
+                    raise RuntimeError(f"ComfyUI server failed with return code {return_code}")
                     
         except Exception as e:
             print(f"Error running ComfyUI server: {e}")
-            if self.server_process:
-                self.server_process.terminate()
+            if hasattr(self, 'server_process') and self.server_process:
+                try:
+                    self.server_process.terminate()
+                    self.server_process = None
+                except Exception as term_error:
+                    print(f"Error terminating server process: {term_error}")
             raise
 
     def stop_server(self):
