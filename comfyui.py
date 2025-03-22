@@ -83,22 +83,34 @@ class ComfyUI:
                 "--output-directory", output_directory,
                 "--input-directory", input_directory,
                 "--disable-metadata",
-                "--highvram"
+                "--highvram",
+                "--listen", "0.0.0.0"  # Listen on all interfaces
             ]
             
             self.server_process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True
+                universal_newlines=True,
+                cwd=self.comfyui_path  # Set working directory to ComfyUI path
             )
             
-            # Monitor the process output
+            # Monitor both stdout and stderr
             while True:
-                output = self.server_process.stdout.readline()
-                if output:
-                    print("ComfyUI:", output.strip())
+                stdout_line = self.server_process.stdout.readline()
+                stderr_line = self.server_process.stderr.readline()
+                
+                if stdout_line:
+                    print("ComfyUI:", stdout_line.strip())
+                if stderr_line:
+                    print("ComfyUI Error:", stderr_line.strip())
+                    
                 if self.server_process.poll() is not None:
+                    remaining_stderr = self.server_process.stderr.read()
+                    if remaining_stderr:
+                        print("ComfyUI Error:", remaining_stderr.strip())
+                    if self.server_process.returncode != 0:
+                        raise RuntimeError(f"ComfyUI server failed to start with return code {self.server_process.returncode}")
                     break
                     
         except Exception as e:
@@ -266,7 +278,7 @@ class ComfyUI:
 
         if http_error:
             raise Exception(
-                "ComfyUI Error – Your workflow could not be run. This usually happens if you’re trying to use an unsupported node. Check the logs for 'KeyError: ' details, and go to https://github.com/fofr/cog-comfyui to see the list of supported custom nodes."
+                "ComfyUI Error – Your workflow could not be run. This usually happens if you're trying to use an unsupported node. Check the logs for 'KeyError: ' details, and go to https://github.com/fofr/cog-comfyui to see the list of supported custom nodes."
             )
 
     def wait_for_prompt_completion(self, workflow, prompt_id):
