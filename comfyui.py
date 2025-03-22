@@ -93,7 +93,8 @@ class ComfyUI:
                 "--input-directory", input_directory,
                 "--disable-metadata",
                 "--highvram",
-                "--listen", "0.0.0.0"  # Listen on all interfaces
+                "--listen", "0.0.0.0",
+                "--port", "8188"
             ]
             
             print("Starting ComfyUI server with command:", " ".join(command))
