@@ -11,6 +11,7 @@ import random
 import requests
 import shutil
 import custom_node_helpers as helpers
+import sys
 
 from pathlib import Path
 from node import Node
@@ -86,8 +87,16 @@ class ComfyUI:
             if not os.path.exists(main_py_path):
                 raise RuntimeError(f"ComfyUI main.py not found at {main_py_path}")
 
+            # Ensure output and input directories are absolute paths
+            output_directory = os.path.abspath(output_directory)
+            input_directory = os.path.abspath(input_directory)
+            
+            # Create directories if they don't exist
+            os.makedirs(output_directory, exist_ok=True)
+            os.makedirs(input_directory, exist_ok=True)
+
             command = [
-                "python",
+                sys.executable,  # Use the current Python interpreter
                 main_py_path,
                 "--output-directory", output_directory,
                 "--input-directory", input_directory,
@@ -98,45 +107,62 @@ class ComfyUI:
             ]
             
             print("Starting ComfyUI server with command:", " ".join(command))
+            print(f"Working directory: {self.comfyui_path}")
+            
+            # First check if we can import torch
+            try:
+                import torch
+                print(f"PyTorch version: {torch.__version__}")
+                if torch.cuda.is_available():
+                    print(f"CUDA available: {torch.cuda.get_device_name(0)}")
+                else:
+                    print("CUDA not available")
+            except ImportError:
+                print("WARNING: PyTorch not found, this may cause issues")
             
             self.server_process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
-                cwd=self.comfyui_path  # Set working directory to ComfyUI path
+                cwd=self.comfyui_path,  # Set working directory to ComfyUI path
+                env=os.environ.copy()  # Use current environment
             )
             
             if self.server_process is None:
                 raise RuntimeError("Failed to start ComfyUI server process")
             
-            # Monitor both stdout and stderr
-            while self.server_process and self.server_process.poll() is None:
-                # Use communicate with timeout to avoid deadlocks
-                try:
-                    stdout_data, stderr_data = self.server_process.communicate(timeout=0.1)
-                    if stdout_data:
-                        print("ComfyUI:", stdout_data.strip())
-                    if stderr_data:
-                        print("ComfyUI Error:", stderr_data.strip())
-                except subprocess.TimeoutExpired:
-                    # Process is still running, continue reading output
-                    continue
-                    
-            # Check final status
-            if self.server_process:
-                return_code = self.server_process.poll()
-                if return_code is not None and return_code != 0:
-                    # Get any remaining output
-                    stdout_data, stderr_data = self.server_process.communicate()
-                    if stderr_data:
-                        print("ComfyUI Error:", stderr_data.strip())
-                    raise RuntimeError(f"ComfyUI server failed with return code {return_code}")
+            # Monitor both stdout and stderr without using communicate
+            # This allows us to read output in real-time
+            def read_output(pipe, prefix):
+                for line in pipe:
+                    print(f"{prefix}: {line.strip()}")
+
+            import threading
+            stdout_thread = threading.Thread(target=read_output, args=(self.server_process.stdout, "ComfyUI"))
+            stderr_thread = threading.Thread(target=read_output, args=(self.server_process.stderr, "ComfyUI Error"))
+            stdout_thread.daemon = True
+            stderr_thread.daemon = True
+            stdout_thread.start()
+            stderr_thread.start()
+            
+            # Wait for process to finish
+            return_code = self.server_process.wait()
+            
+            # If we got here and return code is not 0, something went wrong
+            if return_code != 0:
+                raise RuntimeError(f"ComfyUI server failed with return code {return_code}")
                     
         except Exception as e:
             print(f"Error running ComfyUI server: {e}")
             if hasattr(self, 'server_process') and self.server_process:
                 try:
+                    # Try to get any remaining output
+                    stdout_data, stderr_data = self.server_process.communicate(timeout=1)
+                    if stdout_data:
+                        print("Final stdout:", stdout_data)
+                    if stderr_data:
+                        print("Final stderr:", stderr_data)
                     self.server_process.terminate()
                     self.server_process = None
                 except Exception as term_error:
